@@ -1,5 +1,8 @@
+use std::ffi::c_void;
 use std::io;
 use std::os::fd::RawFd;
+
+use libc::winsize;
 
 /// Abstraction over system calls relative to the terminal.
 pub trait System {
@@ -26,30 +29,79 @@ impl System for LibcSystem {
         }
     }
 
-    fn enable_raw(&self, _fd: RawFd) -> io::Result<libc::termios> {
-        // TODO: Implement using libc::tcgetattr and libc::tcsetattr
-        // Remember to disable ECHO, ICANON, ISIG, IEXTEN
-        todo!("Implement enable_raw_mode")
+    fn enable_raw(&self, fd: RawFd) -> io::Result<libc::termios> {
+        unsafe {
+            let mut termios = std::mem::zeroed();
+
+            if libc::tcgetattr(fd, &mut termios) < 0 {
+                return Err(io::Error::last_os_error());
+            }
+
+            let original = termios.clone();
+
+            termios.c_lflag &=
+                !(libc::BRKINT | libc::ICRNL | libc::INPCK | libc::ISTRIP | libc::IXON);
+            termios.c_oflag &= !(libc::OPOST);
+            termios.c_cflag |= libc::CS8;
+            termios.c_lflag &= !(libc::ECHO | libc::ICANON | libc::IEXTEN | libc::ISIG);
+
+            if libc::tcsetattr(fd, libc::TCSAFLUSH, &termios) < 0 {
+                return Err(io::Error::last_os_error());
+            }
+
+            Ok(original)
+        }
     }
 
-    fn disable_raw(&self, _fd: RawFd, _original: &libc::termios) -> io::Result<()> {
-        // TODO: Restore original attributes
-        todo!("Implement disable_raw_mode")
+    fn disable_raw(&self, fd: RawFd, original: &libc::termios) -> io::Result<()> {
+        unsafe {
+            if libc::tcsetattr(fd, libc::TCSAFLUSH, original) < 0 {
+                return Err(io::Error::last_os_error());
+            }
+
+            Ok(())
+        }
     }
 
-    fn get_window_size(&self, _fd: RawFd) -> io::Result<(u16, u16)> {
-        // TODO: Use libc::ioctl with TIOCGWINSZ
-        todo!("Implement get_window_size")
+    fn get_window_size(&self, fd: RawFd) -> io::Result<(u16, u16)> {
+        unsafe {
+            let mut winsize = libc::winsize {
+                ws_col: 0,
+                ws_row: 0,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            };
+
+            if libc::ioctl(fd, libc::TIOCGWINSZ, &mut winsize) < 0 {
+                return Err(io::Error::last_os_error());
+            }
+
+            Ok((winsize.ws_col, winsize.ws_row))
+        }
     }
 
-    fn read(&self, _fd: RawFd, _buf: &mut [u8]) -> io::Result<usize> {
-        // TODO: Use libc::read
-        todo!("Implement read")
+    fn read(&self, fd: RawFd, buf: &mut [u8]) -> io::Result<usize> {
+        unsafe {
+            let bytes = libc::read(fd, buf.as_mut_ptr() as *mut c_void, buf.len());
+
+            if bytes < 0 {
+                return Err(io::Error::last_os_error());
+            }
+
+            Ok(bytes as usize)
+        }
     }
 
-    fn write(&self, _fd: RawFd, _buf: &[u8]) -> io::Result<usize> {
-        // TODO: Use libc::write
-        todo!("Implement write")
+    fn write(&self, fd: RawFd, buf: &[u8]) -> io::Result<usize> {
+        unsafe {
+            let bytes = libc::write(fd, buf.as_ptr() as *const c_void, buf.len());
+
+            if bytes < 0 {
+                return Err(io::Error::last_os_error());
+            }
+
+            Ok(bytes as usize)
+        }
     }
 }
 
@@ -111,6 +163,36 @@ mod tests {
         let sys = LibcSystem;
         let fd = sys.open_tty().expect("Failed to open /dev/tty");
         assert!(fd > 0);
+        unsafe { libc::close(fd) };
+    }
+
+    #[test]
+    #[ignore]
+    fn test_libc_system_raw_mode() {
+        let sys = LibcSystem;
+        let fd = sys.open_tty().expect("Failed to open TTY");
+
+        // 1. Enable Raw
+        let original = sys.enable_raw(fd).expect("Failed to enable raw");
+
+        // 2. Verify ECHO is off
+        let mut current: libc::termios = unsafe { std::mem::zeroed() };
+        unsafe { libc::tcgetattr(fd, &mut current) };
+        assert_eq!(current.c_lflag & libc::ECHO, 0, "ECHO should be disabled");
+
+        // 3. Disable Raw
+        sys.disable_raw(fd, &original)
+            .expect("Failed to disable raw");
+
+        // 4. Verify ECHO is back on (assuming it was on before)
+        unsafe { libc::tcgetattr(fd, &mut current) };
+        // We compare against the original we captured
+        assert_eq!(
+            current.c_lflag & libc::ECHO,
+            original.c_lflag & libc::ECHO,
+            "ECHO state should be restored"
+        );
+
         unsafe { libc::close(fd) };
     }
 
