@@ -35,7 +35,7 @@ impl System for LibcSystem {
                 return Err(io::Error::last_os_error());
             }
 
-            let original = termios.clone();
+            let original = termios;
 
             termios.c_lflag &=
                 !(libc::BRKINT | libc::ICRNL | libc::INPCK | libc::ISTRIP | libc::IXON);
@@ -151,10 +151,10 @@ impl Terminal {
 
 impl Drop for Terminal {
     fn drop(&mut self) {
-        if let Some(termios) = self.original_termios {
-            if let Err(e) = self.system.disable_raw(self.fd, &termios) {
-                eprintln!("{}", e);
-            }
+        if let Some(termios) = self.original_termios
+            && let Err(e) = self.system.disable_raw(self.fd, &termios)
+        {
+            log!("{}", e);
         }
     }
 }

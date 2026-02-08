@@ -13,10 +13,10 @@ pub fn init() -> io::Result<()> {
 }
 
 pub fn log(msg: &str) {
-    if let Ok(mut guard) = LOGGER.lock() {
-        if let Some(file) = guard.as_mut() {
-            let _ = writeln!(file, "{}", msg);
-        }
+    if let Ok(mut guard) = LOGGER.lock()
+        && let Some(file) = guard.as_mut()
+    {
+        let _ = writeln!(file, "{}", msg);
     }
 }
 
