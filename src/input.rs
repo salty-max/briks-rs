@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::terminal::Terminal;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     Key(KeyEvent),
@@ -86,6 +88,32 @@ impl std::ops::BitOr for KeyModifiers {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self {
         Self(self.0 | rhs.0)
+    }
+}
+
+pub struct Input {
+    parser: Parser,
+}
+
+impl Input {
+    pub fn new() -> Self {
+        Self {
+            parser: Parser::new(),
+        }
+    }
+
+    pub fn read(&mut self, term: &Terminal) -> Vec<Event> {
+        let mut buf = [0u8; 1024];
+        match term.read(&mut buf) {
+            Ok(n) if n > 0 => self.parser.parse(&buf[..n]),
+            _ => Vec::new(),
+        }
+    }
+}
+
+impl Default for Input {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -222,5 +250,69 @@ mod tests {
         // 'é' is 0xC3 0xA9
         let events = parser.parse(&[0xc3, 0xa9]);
         assert_eq!(events, vec![Event::Key(KeyEvent::new(KeyCode::Char('é')))]);
+    }
+}
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use crate::terminal::{System, Terminal};
+    use std::io;
+    use std::os::fd::RawFd;
+    use std::sync::{Arc, Mutex};
+
+    struct MockReader {
+        data: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl MockReader {
+        fn new(data: Vec<u8>) -> Self {
+            Self {
+                data: Arc::new(Mutex::new(data)),
+            }
+        }
+    }
+
+    impl System for MockReader {
+        fn open_tty(&self) -> io::Result<RawFd> {
+            Ok(0)
+        }
+        fn enable_raw(&self, _fd: RawFd) -> io::Result<libc::termios> {
+            Ok(unsafe { std::mem::zeroed() })
+        }
+        fn disable_raw(&self, _fd: RawFd, _orig: &libc::termios) -> io::Result<()> {
+            Ok(())
+        }
+        fn get_window_size(&self, _fd: RawFd) -> io::Result<(u16, u16)> {
+            Ok((80, 24))
+        }
+        fn write(&self, _fd: RawFd, _buf: &[u8]) -> io::Result<usize> {
+            Ok(0)
+        }
+
+        fn read(&self, _fd: RawFd, buf: &mut [u8]) -> io::Result<usize> {
+            let mut data = self.data.lock().unwrap();
+            if data.is_empty() {
+                return Ok(0);
+            }
+
+            let len = std::cmp::min(buf.len(), data.len());
+            buf[..len].copy_from_slice(&data[..len]);
+
+            // Remove read data
+            data.drain(0..len);
+
+            Ok(len)
+        }
+    }
+
+    #[test]
+    fn test_input_read() {
+        let mock = MockReader::new(b"a".to_vec());
+        let term = Terminal::new_with_system(Box::new(mock)).unwrap();
+        let mut input = Input::new();
+
+        let events = input.read(&term);
+        assert_eq!(events, vec![Event::Key(KeyEvent::new(KeyCode::Char('a')))]);
     }
 }
