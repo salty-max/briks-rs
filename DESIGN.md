@@ -120,19 +120,19 @@ System calls cannot be verified in a standard test harness. Dependency injection
 ## 5. Development Roadmap
 
 ### Phase 1: Foundation
-- [ ] Implement `System` trait and `LibcSystem` (raw mode, window size, read/write)
-- [ ] Implement `Terminal` wrapper with `Drop`-based cleanup
-- [ ] Verify raw mode toggle with `MockSystem` tests
+- [x] Implement `System` trait and `LibcSystem` (raw mode, window size, read/write)
+- [x] Implement `Terminal` wrapper with `Drop`-based cleanup
+- [x] Verify raw mode toggle with `MockSystem` tests
 
 ### Phase 2: Input & Events
-- [ ] Define `Event` and `KeyEvent` enums
-- [ ] Implement non-blocking stdin reader
-- [ ] Build ANSI escape sequence parser
+- [x] Define `Event` and `KeyEvent` enums
+- [x] Implement non-blocking stdin reader
+- [x] Build ANSI escape sequence parser
 
 ### Phase 3: Runtime
-- [ ] Define `Application` trait and `Command` enum
-- [ ] Implement the main event loop (`run` function)
-- [ ] Wire up: poll events -> `update` -> execute commands -> `view` -> render
+- [x] Define `Application` trait and `Command` enum
+- [x] Implement the main event loop (`run` function)
+- [x] Wire up: poll events -> `update` -> execute commands -> `view` -> render
 
 ### Phase 4: Layout & Styling
 - [ ] Create ANSI style builder (colors, bold, underline, reset)

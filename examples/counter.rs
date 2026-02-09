@@ -1,6 +1,7 @@
 use briks::{
+    Application, Command,
     input::{Event, KeyCode},
-    run, Application, Command,
+    run,
 };
 
 struct Counter {

@@ -1,20 +1,35 @@
+//! The `input` module handles the parsing of raw byte streams into semantic events.
+//!
+//! It provides:
+//! * [`Event`]: A high-level enum representing things that happen (Keys, Resizes).
+//! * [`Input`]: The main entry point to read from the terminal and get events.
+//! * [`Parser`]: A state machine that decodes ANSI escape sequences and UTF-8 characters.
+
+use std::collections::VecDeque;
 use std::fmt;
 
 use crate::terminal::Terminal;
 
+/// Represents a distinct event occurring in the application.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
+    /// A keyboard press (char, control key, function key).
     Key(KeyEvent),
+    /// A terminal resize event (cols, rows).
     Resize(u16, u16),
 }
 
+/// Represents a specific key press, including modifiers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyEvent {
+    /// The specific key that was pressed.
     pub code: KeyCode,
+    /// Any modifiers held down (Shift, Ctrl, Alt).
     pub modifiers: KeyModifiers,
 }
 
 impl KeyEvent {
+    /// Creates a new `KeyEvent` with no modifiers.
     pub fn new(code: KeyCode) -> Self {
         Self {
             code,
@@ -22,13 +37,16 @@ impl KeyEvent {
         }
     }
 
+    /// Creates a new `KeyEvent` with specific modifiers.
     pub fn with_modifiers(code: KeyCode, modifiers: KeyModifiers) -> Self {
         Self { code, modifiers }
     }
 }
 
+/// Represents the key identifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyCode {
+    /// A standard character key (e.g., 'a', '1', '?').
     Char(char),
     Enter,
     Backspace,
@@ -43,10 +61,12 @@ pub enum KeyCode {
     End,
     PageUp,
     PageDown,
+    /// Function keys (F1-F12).
     F(u8),
     Null,
 }
 
+/// A bitflag struct representing Shift, Ctrl, and Alt modifiers.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct KeyModifiers(u8);
 
@@ -55,14 +75,17 @@ impl KeyModifiers {
     pub const CTRL: Self = Self(0b0000_0010);
     pub const ALT: Self = Self(0b0000_0100);
 
+    /// Returns an empty set of modifiers.
     pub fn empty() -> Self {
         Self(0)
     }
 
+    /// Checks if a specific modifier is set.
     pub fn contains(self, other: Self) -> bool {
         (self.0 & other.0) == other.0
     }
 
+    /// Inserts a modifier into the set.
     pub fn insert(&mut self, other: Self) {
         self.0 |= other.0;
     }
@@ -84,6 +107,7 @@ impl fmt::Debug for KeyModifiers {
     }
 }
 
+/// Allows combining modifiers using the `|` operator.
 impl std::ops::BitOr for KeyModifiers {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self {
@@ -91,6 +115,9 @@ impl std::ops::BitOr for KeyModifiers {
     }
 }
 
+/// The main input handler.
+///
+/// Reads raw bytes from the [`Terminal`] and uses the [`Parser`] to produce [`Event`]s.
 pub struct Input {
     parser: Parser,
 }
@@ -102,6 +129,10 @@ impl Input {
         }
     }
 
+    /// Reads available bytes from the terminal and returns a vector of parsed events.
+    ///
+    /// This method is non-blocking if the underlying terminal read is non-blocking,
+    /// or blocking otherwise (standard `read` behavior).
     pub fn read(&mut self, term: &Terminal) -> Vec<Event> {
         let mut buf = [0u8; 1024];
         match term.read(&mut buf) {
@@ -117,8 +148,9 @@ impl Default for Input {
     }
 }
 
+/// Internal state machine for parsing byte streams into Events.
 pub struct Parser {
-    buffer: Vec<u8>,
+    buffer: VecDeque<u8>,
 }
 
 impl Default for Parser {
@@ -129,11 +161,15 @@ impl Default for Parser {
 
 impl Parser {
     pub fn new() -> Self {
-        Self { buffer: Vec::new() }
+        Self {
+            buffer: VecDeque::new(),
+        }
     }
 
+    /// Parses a slice of bytes and appends them to the internal buffer,
+    /// returning any complete events found.
     pub fn parse(&mut self, bytes: &[u8]) -> Vec<Event> {
-        self.buffer.extend_from_slice(bytes);
+        self.buffer.extend(bytes);
         let mut events: Vec<Event> = Vec::new();
 
         loop {
@@ -141,46 +177,55 @@ impl Parser {
                 break;
             }
 
+            // Look at the first byte without removing it yet
             match self.buffer[0] {
                 b'\r' => {
                     events.push(Event::Key(KeyEvent::new(KeyCode::Enter)));
-                    self.buffer.remove(0);
+                    self.buffer.pop_front();
                 }
                 b'\x1b' => {
+                    // Start of an Escape Sequence
                     if self.buffer.len() == 1 {
-                        break; // Wait for more
+                        break; // Incomplete, wait for more data
                     }
 
+                    // Check for CSI (Control Sequence Introducer) `\x1b[`
                     if self.buffer.len() >= 3 && self.buffer[1] == b'[' {
                         match self.buffer[2] {
                             b'A' => {
                                 events.push(Event::Key(KeyEvent::new(KeyCode::Up)));
-                                self.buffer.drain(0..3);
+                                self.consume(3);
                             }
                             _ => {
-                                // Unknown CSI, just consume Esc
+                                // Unknown CSI sequence, consume ESC to prevent stuck loop
                                 events.push(Event::Key(KeyEvent::new(KeyCode::Esc)));
-                                self.buffer.remove(0);
+                                self.buffer.pop_front();
                             }
                         }
                     } else {
-                        // Just Esc
+                        // Just a raw Esc key
                         events.push(Event::Key(KeyEvent::new(KeyCode::Esc)));
-                        self.buffer.remove(0);
+                        self.buffer.pop_front();
                     }
                 }
                 b => {
+                    // Regular UTF-8 Character parsing
                     let width = utf8_char_width(b);
+
                     if width == 0 {
-                        // Invalid, consume 1 byte
-                        self.buffer.remove(0);
+                        // Invalid byte, consume it to skip
+                        self.buffer.pop_front();
                     } else if self.buffer.len() >= width {
-                        let s = std::str::from_utf8(&self.buffer[0..width]).unwrap();
-                        let c = s.chars().next().unwrap();
-                        events.push(Event::Key(KeyEvent::new(KeyCode::Char(c))));
-                        self.buffer.drain(0..width);
+                        // Extract the valid UTF-8 slice
+                        let bytes: Vec<u8> = self.buffer.range(0..width).copied().collect();
+                        if let Ok(s) = std::str::from_utf8(&bytes)
+                            && let Some(c) = s.chars().next()
+                        {
+                            events.push(Event::Key(KeyEvent::new(KeyCode::Char(c))));
+                        }
+                        self.consume(width);
                     } else {
-                        // Wait for more data
+                        // Incomplete UTF-8 char, wait for more data
                         break;
                     }
                 }
@@ -189,8 +234,16 @@ impl Parser {
 
         events
     }
+
+    /// Helper to remove `n` bytes from the front of the queue
+    fn consume(&mut self, n: usize) {
+        for _ in 0..n {
+            self.buffer.pop_front();
+        }
+    }
 }
 
+/// Helper to determine the byte width of a UTF-8 character based on the first byte.
 fn utf8_char_width(first_byte: u8) -> usize {
     if first_byte & 0b10000000 == 0 {
         1
@@ -202,7 +255,7 @@ fn utf8_char_width(first_byte: u8) -> usize {
         4
     } else {
         0
-    } // Invalid
+    }
 }
 
 #[cfg(test)]
@@ -247,7 +300,7 @@ mod tests {
     #[test]
     fn test_parse_utf8() {
         let mut parser = Parser::new();
-        // 'é' is 0xC3 0xA9
+        // 'é' is 0xC3 0xA9 in UTF-8
         let events = parser.parse(&[0xc3, 0xa9]);
         assert_eq!(events, vec![Event::Key(KeyEvent::new(KeyCode::Char('é')))]);
     }
@@ -256,63 +309,22 @@ mod tests {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    use crate::terminal::{System, Terminal};
-    use std::io;
-    use std::os::fd::RawFd;
-    use std::sync::{Arc, Mutex};
-
-    struct MockReader {
-        data: Arc<Mutex<Vec<u8>>>,
-    }
-
-    impl MockReader {
-        fn new(data: Vec<u8>) -> Self {
-            Self {
-                data: Arc::new(Mutex::new(data)),
-            }
-        }
-    }
-
-    impl System for MockReader {
-        fn open_tty(&self) -> io::Result<RawFd> {
-            Ok(0)
-        }
-        fn enable_raw(&self, _fd: RawFd) -> io::Result<libc::termios> {
-            Ok(unsafe { std::mem::zeroed() })
-        }
-        fn disable_raw(&self, _fd: RawFd, _orig: &libc::termios) -> io::Result<()> {
-            Ok(())
-        }
-        fn get_window_size(&self, _fd: RawFd) -> io::Result<(u16, u16)> {
-            Ok((80, 24))
-        }
-        fn write(&self, _fd: RawFd, _buf: &[u8]) -> io::Result<usize> {
-            Ok(0)
-        }
-
-        fn read(&self, _fd: RawFd, buf: &mut [u8]) -> io::Result<usize> {
-            let mut data = self.data.lock().unwrap();
-            if data.is_empty() {
-                return Ok(0);
-            }
-
-            let len = std::cmp::min(buf.len(), data.len());
-            buf[..len].copy_from_slice(&data[..len]);
-
-            // Remove read data
-            data.drain(0..len);
-
-            Ok(len)
-        }
-    }
+    use crate::terminal::{Terminal, mocks::MockSystem}; // FIX: Reusing the existing MockSystem
 
     #[test]
     fn test_input_read() {
-        let mock = MockReader::new(b"a".to_vec());
+        // Arrange
+        let mock = MockSystem::new();
+        // Pre-fill the mock's input buffer with data "a"
+        mock.push_input(b"a");
+
         let term = Terminal::new_with_system(Box::new(mock)).unwrap();
         let mut input = Input::new();
 
+        // Act
         let events = input.read(&term);
+
+        // Assert
         assert_eq!(events, vec![Event::Key(KeyEvent::new(KeyCode::Char('a')))]);
     }
 }
