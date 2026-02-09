@@ -35,6 +35,7 @@ pub use crate::buffer::{Buffer, Cell};
 pub use crate::frame::Frame;
 pub use crate::input::{Event, Input, KeyCode, KeyEvent};
 use crate::renderer::Renderer;
+pub use crate::style::{Color, Modifier, Style};
 use crate::terminal::Terminal;
 
 pub mod buffer;
@@ -43,6 +44,7 @@ pub mod input;
 #[macro_use]
 pub mod logger;
 pub mod renderer;
+pub mod style;
 pub mod terminal;
 
 /// Commands returned by the application to control the runtime flow.

@@ -4,18 +4,23 @@
 //! the framework can perform "diff-rendering," only updating the parts of the
 //! terminal that have actually changed.
 
+use crate::Style;
+
 /// A single character on the screen with its associated style.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cell {
     /// The character to display in this cell.
     pub symbol: char,
-    // TODO: Add Style (foreground, background, modifiers)
+    pub style: Style,
 }
 
 impl Default for Cell {
     /// Returns a cell containing a space character.
     fn default() -> Self {
-        Self { symbol: ' ' }
+        Self {
+            symbol: ' ',
+            style: Style::default(),
+        }
     }
 }
 
@@ -71,6 +76,29 @@ impl Buffer {
         }
         let idx = self.index(x, y);
         self.content[idx].symbol = symbol;
+    }
+
+    /// Sets the style of the cell at the given coordinates.
+    ///
+    /// Does nothing if the coordinates are out of bounds.
+    pub fn set_style(&mut self, x: u16, y: u16, style: Style) {
+        if x >= self.width || y >= self.height {
+            return;
+        }
+        let idx = self.index(x, y);
+        self.content[idx].style = style;
+    }
+
+    /// Sets both the character and the style at the given coordinates.
+    ///
+    /// Does nothing if the coordinates are out of bounds.
+    pub fn set_with_style(&mut self, x: u16, y: u16, symbol: char, style: Style) {
+        if x >= self.width || y >= self.height {
+            return;
+        }
+        let idx = self.index(x, y);
+        self.content[idx].symbol = symbol;
+        self.content[idx].style = style;
     }
 
     /// Helper to convert 2D coordinates to a 1D index.
@@ -155,7 +183,10 @@ mod tests {
             Change {
                 x: 1,
                 y: 1,
-                cell: Cell { symbol: 'X' }
+                cell: Cell {
+                    symbol: 'X',
+                    style: Style::default()
+                }
             }
         );
         assert_eq!(
@@ -163,7 +194,10 @@ mod tests {
             Change {
                 x: 2,
                 y: 2,
-                cell: Cell { symbol: 'Y' }
+                cell: Cell {
+                    symbol: 'Y',
+                    style: Style::default()
+                }
             }
         );
     }
@@ -179,5 +213,18 @@ mod tests {
         assert_eq!(changes.len(), 9);
         assert_eq!(changes[0].cell.symbol, 'A');
         assert_eq!(changes[1].cell.symbol, ' ');
+    }
+
+    #[test]
+    fn test_buffer_diff_style_change() {
+        use crate::style::Color;
+
+        let old = Buffer::new(1, 1);
+        let mut new = Buffer::new(1, 1);
+        new.set_style(0, 0, Style::new().fg(Color::Red));
+
+        let changes = new.diff(&old);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].cell.style.foreground, Some(Color::Red));
     }
 }
