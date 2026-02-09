@@ -4,6 +4,7 @@
 //! * Enter and exit **Raw Mode** (disabling canonical input and local echo).
 //! * Read and write to the underlying TTY file descriptor.
 //! * Query terminal capabilities like window size.
+//! * Poll for input availability (crucial for handling escape sequences).
 //!
 //! # Architecture
 //! This module uses the **Dependency Injection** pattern to facilitate testing.
@@ -44,6 +45,12 @@ pub trait System {
 
     /// Writes raw bytes from the buffer to the file descriptor.
     fn write(&self, fd: RawFd, buf: &[u8]) -> io::Result<usize>;
+
+    /// Checks if data is available to read within the given timeout.
+    ///
+    /// Returns `Ok(true)` if data is ready, `Ok(false)` if the timeout expired,
+    /// or `Err` if the system call failed.
+    fn poll(&self, fd: RawFd, timeout: Duration) -> io::Result<bool>;
 }
 
 /// The production implementation of [`System`] using `libc` calls.
@@ -146,9 +153,30 @@ impl System for LibcSystem {
             Ok(bytes as usize)
         }
     }
+
+    fn poll(&self, fd: RawFd, timeout: Duration) -> io::Result<bool> {
+        unsafe {
+            let mut pfd = libc::pollfd {
+                fd,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+
+            // timeout needs to be in msecs
+            let timeout_ms = timeout.as_millis() as libc::c_int;
+
+            let ret = libc::poll(&mut pfd, 1, timeout_ms);
+            if ret < 0 {
+                return Err(io::Error::last_os_error());
+            }
+
+            Ok(ret > 0)
+        }
+    }
 }
 
 use std::fmt;
+use std::time::Duration;
 
 /// A high-level wrapper around the terminal state and I/O.
 ///
@@ -206,6 +234,15 @@ impl Terminal {
     /// Writes raw bytes to the terminal.
     pub fn write(&self, buf: &[u8]) -> io::Result<usize> {
         self.system.write(self.fd, buf)
+    }
+
+    /// Checks if data is available to read in the given timeout.
+    ///
+    /// This is used to differentiate between ambiguous keys (like `Esc` vs `Alt+...`).
+    /// * `Ok(true)`: Data is waiting in the kernel buffer.
+    /// * `Ok(false)`: Timeout expired with no data.
+    pub fn poll(&self, timeout: Duration) -> io::Result<bool> {
+        self.system.poll(self.fd, timeout)
     }
 }
 
@@ -420,6 +457,11 @@ pub(crate) mod mocks {
         fn write(&self, fd: RawFd, buf: &[u8]) -> io::Result<usize> {
             self.push_log(&format!("write({}, {} bytes)", fd, buf.len()));
             Ok(buf.len())
+        }
+
+        fn poll(&self, _fd: RawFd, _timeout: Duration) -> io::Result<bool> {
+            let input = self.input_buffer.lock().unwrap();
+            Ok(!input.is_empty())
         }
     }
 }

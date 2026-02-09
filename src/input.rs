@@ -7,6 +7,7 @@
 
 use std::collections::VecDeque;
 use std::fmt;
+use std::time::Duration;
 
 use crate::terminal::Terminal;
 
@@ -115,39 +116,6 @@ impl std::ops::BitOr for KeyModifiers {
     }
 }
 
-/// The main input handler.
-///
-/// Reads raw bytes from the [`Terminal`] and uses the [`Parser`] to produce [`Event`]s.
-pub struct Input {
-    parser: Parser,
-}
-
-impl Input {
-    pub fn new() -> Self {
-        Self {
-            parser: Parser::new(),
-        }
-    }
-
-    /// Reads available bytes from the terminal and returns a vector of parsed events.
-    ///
-    /// This method is non-blocking if the underlying terminal read is non-blocking,
-    /// or blocking otherwise (standard `read` behavior).
-    pub fn read(&mut self, term: &Terminal) -> Vec<Event> {
-        let mut buf = [0u8; 1024];
-        match term.read(&mut buf) {
-            Ok(n) if n > 0 => self.parser.parse(&buf[..n]),
-            _ => Vec::new(),
-        }
-    }
-}
-
-impl Default for Input {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Internal state machine for parsing byte streams into Events.
 pub struct Parser {
     buffer: VecDeque<u8>,
@@ -235,6 +203,31 @@ impl Parser {
         events
     }
 
+    /// Checks if the parser is holding incomplete data.
+    pub fn has_pending_state(&self) -> bool {
+        !self.buffer.is_empty()
+    }
+
+    /// Forces the parser to interpret whatever is left in the buffer.
+    /// Used when a timeout occurs.
+    pub fn finish_incomplete(&mut self) -> Vec<Event> {
+        let mut events: Vec<Event> = Vec::new();
+        if self.buffer.is_empty() {
+            return events;
+        }
+
+        // If there is a lone \x1b, it is an Esc key
+        if self.buffer[0] == b'\x1b' {
+            events.push(Event::Key(KeyEvent::new(KeyCode::Esc)));
+            self.buffer.pop_front();
+        }
+
+        // If there's garbage left, drop it.
+        self.buffer.clear();
+
+        events
+    }
+
     /// Helper to remove `n` bytes from the front of the queue
     fn consume(&mut self, n: usize) {
         for _ in 0..n {
@@ -255,6 +248,69 @@ fn utf8_char_width(first_byte: u8) -> usize {
         4
     } else {
         0
+    }
+}
+
+/// The main input handler.
+///
+/// Reads raw bytes from the [`Terminal`] and uses the [`Parser`] to produce [`Event`]s.
+pub struct Input {
+    parser: Parser,
+}
+
+impl Input {
+    pub fn new() -> Self {
+        Self {
+            parser: Parser::new(),
+        }
+    }
+
+    /// Reads available bytes from the terminal and returns a vector of parsed events.
+    ///
+    /// This method is non-blocking if the underlying terminal read is non-blocking,
+    /// or blocking otherwise (standard `read` behavior).
+    pub fn read(&mut self, term: &Terminal) -> Vec<Event> {
+        let mut buf = [0u8; 1024];
+        let mut events: Vec<Event> = Vec::new();
+
+        // 1. Blocking read (wait for initial input)
+        match term.read(&mut buf) {
+            Ok(n) if n > 0 => {
+                events.extend(self.parser.parse(&buf[..n]));
+            }
+            _ => return events,
+        }
+
+        // 2. Ambiguity check
+        // If the parser has leftover bytes (like a raw \x1b), we need to distinguish
+        // between `User pressed Esc` and `Network is slow sending [A`
+        if self.parser.has_pending_state() {
+            // Wait 50ms to see if more data arrives
+            match term.poll(Duration::from_millis(50)) {
+                Ok(true) => {
+                    // Data available. It was an escape sequence.
+                    if let Ok(n) = term.read(&mut buf) {
+                        events.extend(self.parser.parse(&buf[..n]));
+                    }
+                }
+                Ok(false) => {
+                    // Timeout ! Just a lone key press
+                    events.extend(self.parser.finish_incomplete());
+                }
+                Err(_) => {
+                    // On error, just flush
+                    events.extend(self.parser.finish_incomplete());
+                }
+            }
+        }
+
+        events
+    }
+}
+
+impl Default for Input {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
