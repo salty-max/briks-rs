@@ -11,15 +11,13 @@
 //!
 //! # Example
 //! ```no_run
-//! use briks::{Application, Command, run, Frame, Event};
+//! use briks::{Application, Command, run, input::Event};
 //!
 //! struct MyApp;
 //! impl Application for MyApp {
 //!     type Action = ();
 //!     fn update(&mut self, _msg: ()) -> Command { Command::Quit }
-//!     fn draw(&self, frame: &mut Frame) {
-//!         frame.write_str(0, 0, "Hello Briks!");
-//!     }
+//!     fn draw(&self) -> String { "Hello Briks!".to_string() }
 //! }
 //!
 //! fn main() -> std::io::Result<()> {
@@ -31,14 +29,14 @@ use std::io;
 use std::thread;
 use std::time::Duration;
 
-pub use crate::buffer::{Buffer, Cell};
-pub use crate::frame::Frame;
-pub use crate::input::{Event, Input, KeyCode, KeyEvent};
+use crate::buffer::Buffer;
 use crate::renderer::Renderer;
-use crate::terminal::Terminal;
+use crate::{
+    input::{Event, Input},
+    terminal::Terminal,
+};
 
 pub mod buffer;
-pub mod frame;
 pub mod input;
 #[macro_use]
 pub mod logger;
@@ -89,7 +87,7 @@ pub trait Application {
     ///
     /// The returned string will be drawn to the terminal. Use ANSI escape codes
     /// for colors and styling, or wait for the upcoming `Buffer` system!
-    fn draw(&self, frame: &mut Frame);
+    fn draw(&self, buffer: &mut Buffer);
 }
 
 /// Entry point to run a Briks application.
@@ -119,16 +117,12 @@ fn run_app<App: Application>(mut app: App, terminal: Terminal, mut input: Input)
     let (width, height) = terminal.size()?;
     let mut renderer = Renderer::new(width, height);
 
-    // Initial screen clear
-    terminal.write(b"\x1b[2J")?;
-
     loop {
         let (w, h) = terminal.size()?;
         let mut next_buffer = Buffer::new(w, h);
-        let mut frame = Frame::new(&mut next_buffer);
 
         // --- 1. Render Phase ---
-        app.draw(&mut frame);
+        app.draw(&mut next_buffer);
         renderer.render(&terminal, &next_buffer)?;
 
         // --- 2. Input Phase ---
@@ -179,7 +173,7 @@ mod tests {
             Command::Quit
         }
 
-        fn draw(&self, _frame: &mut Frame) {}
+        fn draw(&self, _buffer: &mut Buffer) {}
     }
 
     #[test]

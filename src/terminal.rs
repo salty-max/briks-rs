@@ -224,6 +224,10 @@ impl Terminal {
     pub fn new_with_system(system: Box<dyn System>) -> io::Result<Self> {
         let fd = system.open_tty()?;
         let termios = system.enable_raw(fd)?;
+
+        // Hide cursor
+        system.write(fd, b"\x1b[?25l")?;
+
         Ok(Self {
             system,
             fd,
@@ -261,6 +265,9 @@ impl Drop for Terminal {
     ///
     /// If restoration fails, the error is logged to `debug.log`.
     fn drop(&mut self) {
+        // Show cursor
+        let _ = self.write(b"\x1b[?25h");
+
         if let Some(termios) = self.original_termios
             && let Err(e) = self.system.disable_raw(self.fd, &termios)
         {
@@ -405,10 +412,12 @@ mod tests {
         assert_eq!(log[0], "open_tty");
         // enable_raw(100) -> 100 is the hardcoded FD in the Mock
         assert_eq!(log[1], "enable_raw(100)");
-        assert_eq!(log[2], "get_window_size(100)");
-        assert_eq!(log[3], "write(100, \"foo\")");
-        assert_eq!(log[4], "read(100)");
-        assert_eq!(log[5], "disable_raw(100)");
+        assert_eq!(log[2], "write(100, \"\x1b[?25l\")");
+        assert_eq!(log[3], "get_window_size(100)");
+        assert_eq!(log[4], "write(100, \"foo\")");
+        assert_eq!(log[5], "read(100)");
+        assert_eq!(log[6], "write(100, \"\x1b[?25h\")");
+        assert_eq!(log[7], "disable_raw(100)");
     }
 
     #[test]

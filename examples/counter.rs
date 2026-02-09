@@ -1,8 +1,4 @@
-use briks::{
-    Application, Command,
-    input::{Event, KeyCode},
-    run,
-};
+use briks::{Application, Command, Event, Frame, KeyCode, run};
 
 struct Counter {
     value: i32,
@@ -38,8 +34,12 @@ impl Application for Counter {
         Command::None
     }
 
-    fn draw(&self) -> String {
-        format!("Count: {}\r\nPress +/-, q to quit", self.value)
+    fn draw(&self, frame: &mut Frame) {
+        frame.write_str(
+            0,
+            0,
+            format!("Count: {}\r\nPress +/-, q to quit", self.value).as_str(),
+        );
     }
 }
 
