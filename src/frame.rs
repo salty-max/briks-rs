@@ -33,6 +33,10 @@ impl<'a> Frame<'a> {
         self.buffer.height
     }
 
+    pub fn area(&self) -> Rect {
+        self.area
+    }
+
     /// Executes a closure with a sub-frame restricted to the given area.
     ///
     /// All drawing operations performed within the closure will be relative to

@@ -15,6 +15,11 @@ pub enum Direction {
 /// Constraints used to define the size of a layout segment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Constraint {
+    /// Takes up the remaining available space.
+    ///
+    /// If multiple `Fill` constraints are used, the remaining space is divided
+    /// equally among them.
+    Fill,
     /// A fixed percentage of the available space (0-100).
     Percentage(u16),
     /// A fixed number of cells.
@@ -93,7 +98,7 @@ impl Layout {
     /// The number of returned rectangles matches the number of constraints.
     pub fn split(&self, rect: Rect) -> Vec<Rect> {
         let mut rects = Vec::new();
-        let total_primary = match &self.direction {
+        let total_space = match &self.direction {
             Direction::Horizontal => rect.width,
             Direction::Vertical => rect.height,
         };
@@ -102,10 +107,31 @@ impl Layout {
         let start_y = rect.y;
         let mut offset = 0;
 
+        // 1. Calculate used space and count fills
+        let mut used_space = 0;
+        let mut fill_count = 0;
+
+        for c in &self.constraints {
+            match c {
+                Constraint::Length(l) => used_space += l,
+                Constraint::Percentage(p) => used_space += (p * total_space) / 100,
+                Constraint::Fill => fill_count += 1,
+            }
+        }
+
+        // 2. Calculate size of one `Fill` unit
+        let fill_size = if fill_count > 0 {
+            total_space.saturating_sub(used_space) / fill_count
+        } else {
+            0
+        };
+
+        // 3. Create rects
         for c in &self.constraints {
             let size = match c {
                 Constraint::Length(l) => *l,
-                Constraint::Percentage(p) => (p * total_primary) / 100,
+                Constraint::Percentage(p) => (p * total_space) / 100,
+                Constraint::Fill => fill_size,
             };
 
             let sub_rect = match &self.direction {
@@ -118,6 +144,15 @@ impl Layout {
         }
 
         rects
+    }
+
+    /// Splits the given rectangle into a fixed-size array of sub-rectangles.
+    ///
+    /// # Panics
+    /// Panics if the number of constraints does not match the array size `N`.
+    pub fn split_to<const N: usize>(&self, rect: Rect) -> [Rect; N] {
+        let rects = self.split(rect);
+        rects.try_into().expect("Layout constraints count mismatch")
     }
 }
 
@@ -147,5 +182,43 @@ mod tests {
         assert_eq!(rects.len(), 2);
         assert_eq!(rects[0], Rect::new(0, 0, 10, 2));
         assert_eq!(rects[1], Rect::new(0, 2, 10, 5));
+    }
+
+    #[test]
+    fn test_layout_split_fill() {
+        let layout = Layout::new(
+            Direction::Vertical,
+            vec![Constraint::Length(2), Constraint::Fill, Constraint::Fill],
+        );
+        let rect = Rect::new(0, 0, 10, 10);
+        let rects = layout.split(rect);
+
+        assert_eq!(rects.len(), 3);
+        assert_eq!(rects[0].height, 2);
+        assert_eq!(rects[1].height, 4); // (10 - 2) / 2
+        assert_eq!(rects[2].height, 4);
+        assert_eq!(rects[2].y, 6);
+    }
+
+    #[test]
+    fn test_layout_split_to() {
+        let layout = Layout::new(
+            Direction::Horizontal,
+            vec![Constraint::Percentage(50), Constraint::Percentage(50)],
+        );
+        let rect = Rect::new(0, 0, 100, 10);
+        let [left, right] = layout.split_to(rect);
+
+        assert_eq!(left.width, 50);
+        assert_eq!(right.width, 50);
+        assert_eq!(right.x, 50);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_layout_split_to_mismatch() {
+        let layout = Layout::new(Direction::Vertical, vec![Constraint::Fill]);
+        let rect = Rect::new(0, 0, 10, 10);
+        let _: [Rect; 2] = layout.split_to(rect); // Should panic
     }
 }

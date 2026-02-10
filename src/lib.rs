@@ -38,6 +38,7 @@ pub use crate::layout::{Constraint, Direction, Layout, Rect};
 use crate::renderer::Renderer;
 pub use crate::style::{Color, Modifier, Style};
 use crate::terminal::Terminal;
+pub use crate::widgets::Widget;
 
 pub mod buffer;
 pub mod frame;
@@ -48,6 +49,7 @@ pub mod layout;
 pub mod renderer;
 pub mod style;
 pub mod terminal;
+pub mod widgets;
 
 /// Commands returned by the application to control the runtime flow.
 #[derive(Debug, Clone, PartialEq, Eq)]
