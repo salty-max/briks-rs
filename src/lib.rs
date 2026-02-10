@@ -34,6 +34,7 @@ use std::time::Duration;
 pub use crate::buffer::{Buffer, Cell};
 pub use crate::frame::Frame;
 pub use crate::input::{Event, Input, KeyCode, KeyEvent};
+pub use crate::layout::{Constraint, Direction, Layout, Rect};
 use crate::renderer::Renderer;
 pub use crate::style::{Color, Modifier, Style};
 use crate::terminal::Terminal;
@@ -43,6 +44,7 @@ pub mod frame;
 pub mod input;
 #[macro_use]
 pub mod logger;
+pub mod layout;
 pub mod renderer;
 pub mod style;
 pub mod terminal;
@@ -127,7 +129,8 @@ fn run_app<App: Application>(mut app: App, terminal: Terminal, mut input: Input)
     loop {
         let (w, h) = terminal.size()?;
         let mut next_buffer = Buffer::new(w, h);
-        let mut frame = Frame::new(&mut next_buffer);
+        let screen = Rect::new(0, 0, w, h);
+        let mut frame = Frame::new(&mut next_buffer, screen);
 
         // --- 1. Render Phase ---
         app.draw(&mut frame);

@@ -4,19 +4,21 @@
 //! for drawing text, shapes, and widgets without having to manipulate
 //! individual cells manually.
 
-use crate::{Buffer, Style};
+use crate::{Buffer, Rect, Style};
 
 /// A high-level handle for drawing to a buffer.
 pub struct Frame<'a> {
     buffer: &'a mut Buffer,
+    area: Rect,
     current_style: Style,
 }
 
 impl<'a> Frame<'a> {
     /// Creates a new frame wrapping the given buffer.
-    pub fn new(buffer: &'a mut Buffer) -> Self {
+    pub fn new(buffer: &'a mut Buffer, area: Rect) -> Self {
         Self {
             buffer,
+            area,
             current_style: Style::default(),
         }
     }
@@ -31,13 +33,33 @@ impl<'a> Frame<'a> {
         self.buffer.height
     }
 
+    /// Executes a closure with a sub-frame restricted to the given area.
+    ///
+    /// All drawing operations performed within the closure will be relative to
+    /// the sub-frame's top-left corner.
+    pub fn render_area<F>(&mut self, area: Rect, f: F)
+    where
+        F: FnOnce(&mut Frame),
+    {
+        let mut sub_frame = Frame {
+            buffer: self.buffer,
+            current_style: self.current_style,
+            area,
+        };
+        f(&mut sub_frame);
+    }
+
     /// Writes a string to the buffer starting at the given coordinates.
     ///
     /// Text that exceeds the buffer width will be clipped.
     pub fn write_str(&mut self, x: u16, y: u16, text: &str) {
         for (i, c) in text.chars().enumerate() {
-            self.buffer
-                .set_with_style(x + (i as u16), y, c, self.current_style);
+            self.buffer.set_with_style(
+                self.area.x + x + (i as u16),
+                self.area.y + y,
+                c,
+                self.current_style,
+            );
         }
     }
 
@@ -75,7 +97,7 @@ mod tests {
     #[test]
     fn test_frame_with_style_scoped() {
         let mut buffer = Buffer::new(10, 1);
-        let mut frame = Frame::new(&mut buffer);
+        let mut frame = Frame::new(&mut buffer, Rect::new(0, 0, 10, 1));
         let red = Style::new().fg(Color::Red);
         let blue = Style::new().fg(Color::Blue);
 
@@ -94,9 +116,25 @@ mod tests {
     }
 
     #[test]
+    fn test_frame_render_area_translation() {
+        let mut buffer = Buffer::new(20, 20);
+        let mut frame = Frame::new(&mut buffer, Rect::new(0, 0, 20, 20));
+        let sub_area = Rect::new(5, 5, 10, 10);
+
+        frame.render_area(sub_area, |f| {
+            // Draw at (0,0) relative to sub-frame
+            f.write_str(0, 0, "X");
+        });
+
+        // Should be at (5,5) in the underlying buffer
+        assert_eq!(buffer.get(5, 5).symbol, 'X');
+        assert_eq!(buffer.get(0, 0).symbol, ' ');
+    }
+
+    #[test]
     fn test_frame_styled_write_str() {
         let mut buffer = Buffer::new(10, 1);
-        let mut frame = Frame::new(&mut buffer);
+        let mut frame = Frame::new(&mut buffer, Rect::new(0, 0, 10, 1));
         let style = Style::new().fg(Color::Red);
 
         frame.set_style(style);
@@ -109,7 +147,7 @@ mod tests {
     #[test]
     fn test_frame_write_str() {
         let mut buffer = Buffer::new(10, 1);
-        let mut frame = Frame::new(&mut buffer);
+        let mut frame = Frame::new(&mut buffer, Rect::new(0, 0, 10, 1));
 
         frame.write_str(2, 0, "Hello");
 
@@ -122,7 +160,7 @@ mod tests {
     #[test]
     fn test_frame_write_str_clipping() {
         let mut buffer = Buffer::new(5, 1);
-        let mut frame = Frame::new(&mut buffer);
+        let mut frame = Frame::new(&mut buffer, Rect::new(0, 0, 10, 1));
 
         // "Hello World" is 11 chars, buffer is 5.
         // Starting at 2, it should only write "Hel"
