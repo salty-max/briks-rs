@@ -18,7 +18,11 @@ It is designed for developers who want to build robust, flicker-free terminal ap
 Add `briks` to your `Cargo.toml` (once published) and implement the `Application` trait:
 
 ```rust
-use briks::{Application, Color, Command, Event, Frame, KeyCode, Modifier, Style, run};
+use briks::{
+    Application, Color, Command, Constraint, Direction, Event, Frame, 
+    KeyCode, Layout, Modifier, Style, Widget, run, 
+    widgets::{Text, Block, Borders}
+};
 
 struct Counter {
     value: i32,
@@ -55,26 +59,54 @@ impl Application for Counter {
     }
 
     fn draw(&self, frame: &mut Frame) {
-        // Use scoped styling for the header
-        frame.with_style(Style::new().fg(Color::Cyan).modifier(Modifier::BOLD), |f| {
-            f.write_str(0, 0, &format!("Count: {}", self.value));
-        });
-        
-        frame.write_str(0, 1, "Press + to inc, - to dec, q to quit");
+        let [header, body, footer] = Layout::new(
+            Direction::Vertical,
+            vec![
+                Constraint::Length(1),
+                Constraint::Fill,
+                Constraint::Length(1),
+            ],
+        )
+        .split_to(frame.area());
+
+        Text::new("Briks Counter")
+            .style(Style::new().fg(Color::Cyan).modifier(Modifier::BOLD))
+            .render(header, frame);
+
+        let block = Block::new()
+            .borders(Borders::ALL)
+            .title(" Status ")
+            .style(Style::new().fg(Color::BrightBlack))
+            .title_style(Style::new().fg(Color::Yellow).modifier(Modifier::BOLD));
+
+        let inner = block.inner(body);
+        block.render(body, frame);
+
+        Text::new(format!("Current Count: {}", self.value))
+            .render(inner, frame);
+
+        Text::new("Press + to inc, - to dec, q to quit")
+            .style(Style::new().fg(Color::Rgb(128, 128, 128)))
+            .render(footer, frame);
     }
 }
-```
 
+fn main() -> std::io::Result<()> {
+    run(Counter { value: 0 })
+}
+```
 
 ## 🛠️ Current Status
 
 Briks is currently in active development. We are currently working on:
 - [x] Hardware Abstraction Layer (HAL)
 - [x] Event Parsing (ANSI & UTF-8)
-- [x] Diff-Rendering Engine
-- [x] Stateful Styling API
-- [ ] Layout Engine (Flexbox-inspired)
-- [ ] Widget Library
+- [x] Flicker-Free Diff-Rendering
+- [x] Stateful Styling API (TrueColor)
+- [x] Layout Engine (Flexbox-inspired)
+- [x] Initial Widget System (`Text`, `Block`)
+- [ ] Advanced Widget Library (`List`, `Gauge`, etc.)
+- [ ] Composition & Widget Nesting Helpers
 
 ## 📜 License
 

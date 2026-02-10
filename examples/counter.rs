@@ -1,6 +1,7 @@
 use briks::{
     Application, Color, Command, Constraint, Direction, Event, Frame, KeyCode, Layout, Modifier,
-    Style, Widget, run, widgets::Text,
+    Style, Widget, run,
+    widgets::{Block, Borders, Text},
 };
 
 struct Counter {
@@ -38,22 +39,32 @@ impl Application for Counter {
     }
 
     fn draw(&self, frame: &mut Frame) {
-        let [top, _, bottom] = Layout::new(
+        let [header, body, footer] = Layout::new(
             Direction::Vertical,
             vec![
                 Constraint::Length(1),
-                Constraint::Length(1),
                 Constraint::Fill,
+                Constraint::Length(1),
             ],
         )
         .split_to(frame.area());
 
-        Text::new(format!("Count: {}", self.value))
+        Text::new("Counter Example")
             .style(Style::new().modifier(Modifier::BOLD))
-            .render(top, frame);
+            .render(header, frame);
+        let block = Block::new()
+            .borders(Borders::ALL)
+            .title("Hello")
+            .style(Style::new().fg(Color::Magenta))
+            .title_style(Style::new().fg(Color::Green).modifier(Modifier::BOLD));
+
+        let inner_area = block.inner(body);
+        block.render(body, frame);
+
+        Text::new(format!("Count: {}", self.value)).render(inner_area, frame);
         Text::new("Press +/-, q to quit.")
             .style(Style::new().fg(Color::Rgb(128, 128, 128)))
-            .render(bottom, frame);
+            .render(footer, frame);
     }
 }
 

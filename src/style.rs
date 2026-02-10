@@ -152,6 +152,8 @@ impl Style {
         self
     }
 
+    // TODO: Implement a `patch` or `inherit` method to combine styles.
+
     pub fn to_ansi(&self) -> String {
         let mut codes = vec!["0".to_string()];
 

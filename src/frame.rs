@@ -25,12 +25,12 @@ impl<'a> Frame<'a> {
 
     /// Returns the width of the frame.
     pub fn width(&self) -> u16 {
-        self.buffer.width
+        self.area.width
     }
 
     /// Returns the height of the frame.
     pub fn height(&self) -> u16 {
-        self.buffer.height
+        self.area.height
     }
 
     pub fn area(&self) -> Rect {

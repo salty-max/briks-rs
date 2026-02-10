@@ -26,6 +26,7 @@ impl Renderer {
     /// This method calculates the difference between the new buffer and the
     /// previous one, and only writes the changed cells to the terminal.
     pub fn render(&mut self, terminal: &Terminal, next: &Buffer) -> io::Result<()> {
+        // TODO: Implement diff-styling to only send ANSI style codes when they change.
         // If buffers sizes are different, clear the screen
         if next.width != self.current_buffer.width || next.height != self.current_buffer.height {
             terminal.write("\x1b[2J".as_bytes())?;

@@ -2,7 +2,10 @@
 
 use crate::{Frame, Rect};
 
+pub mod block;
 pub mod text;
+
+pub use block::{Block, BorderType, Borders};
 pub use text::Text;
 
 /// The core trait for all UI components.
