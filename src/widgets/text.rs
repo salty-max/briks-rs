@@ -6,6 +6,7 @@ use crate::{Frame, Rect, Style, widgets::Widget};
 pub struct Text {
     text: String,
     style: Style,
+    wrap: bool,
 }
 
 impl Text {
@@ -14,6 +15,7 @@ impl Text {
         Self {
             text: text.into(),
             style: Style::default(),
+            wrap: false,
         }
     }
 
@@ -22,13 +24,48 @@ impl Text {
         self.style = style;
         self
     }
+
+    /// Sets whether the text should wrap when it reaches the edge of the area.
+    ///
+    /// If true, text will wrap to the next line. If false (default), text will be clipped.
+    pub fn wrap(mut self, wrapped: bool) -> Self {
+        self.wrap = wrapped;
+        self
+    }
 }
 
 impl Widget for Text {
     fn render(self, area: Rect, frame: &mut Frame) {
         frame.render_area(area, |f| {
-            f.with_style(self.style, |f2| {
-                f2.write_str(0, 0, &self.text);
+            f.with_style(self.style, |f| {
+                if self.wrap {
+                    let mut wx: u16 = 0;
+                    let mut wy: u16 = 0;
+
+                    for line in self.text.lines() {
+                        for w in line.split_whitespace() {
+                            if wx + w.len() as u16 > f.width() {
+                                wx = 0;
+                                wy += 1;
+                            }
+                            if wy >= f.height() {
+                                break;
+                            }
+
+                            f.write_str(wx, wy, w);
+                            wx += w.len() as u16 + 1;
+                        }
+
+                        // End of paragraph: force new line
+                        wx = 0;
+                        wy += 1;
+                        if wy >= f.height() {
+                            break;
+                        }
+                    }
+                } else {
+                    f.write_str(0, 0, &self.text);
+                }
             });
         });
     }
@@ -62,5 +99,22 @@ mod tests {
 
         assert_eq!(buffer.get(0, 0).symbol, 'A');
         assert_eq!(buffer.get(0, 0).style.foreground, Some(Color::Red));
+    }
+
+    #[test]
+    fn test_text_wrap() {
+        let mut buffer = Buffer::new(5, 3);
+        let mut frame = Frame::new(&mut buffer, Rect::new(0, 0, 5, 3));
+        let text = Text::new("Hello World").wrap(true);
+
+        text.render(Rect::new(0, 0, 5, 3), &mut frame);
+
+        // "Hello" (5 chars) fits on line 0
+        assert_eq!(buffer.get(0, 0).symbol, 'H');
+        assert_eq!(buffer.get(4, 0).symbol, 'o');
+
+        // "World" (5 chars) wraps to line 1
+        assert_eq!(buffer.get(0, 1).symbol, 'W');
+        assert_eq!(buffer.get(4, 1).symbol, 'd');
     }
 }

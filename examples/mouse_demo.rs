@@ -53,9 +53,12 @@ impl Application for MouseDemo {
             // Draw a target at the click position
             // We need to be careful not to draw outside the frame
             if x < area.width && y < area.height {
-                frame.with_style(Style::new().fg(Color::Red).modifier(Modifier::BOLD), |f| {
-                    f.write_str(x, y, "X")
-                });
+                frame.write_str_with_style(
+                    x,
+                    y,
+                    "X",
+                    Style::new().fg(Color::Red).modifier(Modifier::BOLD),
+                );
             }
         }
     }

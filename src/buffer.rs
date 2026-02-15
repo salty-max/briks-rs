@@ -4,7 +4,7 @@
 //! the framework can perform "diff-rendering," only updating the parts of the
 //! terminal that have actually changed.
 
-use crate::Style;
+use crate::{Rect, Style};
 
 /// A single character on the screen with its associated style.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +101,17 @@ impl Buffer {
         self.content[idx].style = style;
     }
 
+    /// Sets the cell at the given coordinates.
+    ///
+    /// Does nothing if the coordinates are out of bounds.
+    pub fn set_cell(&mut self, x: u16, y: u16, cell: Cell) {
+        if x >= self.width || y >= self.height {
+            return;
+        }
+        let idx = self.index(x, y);
+        self.content[idx] = cell;
+    }
+
     /// Helper to convert 2D coordinates to a 1D index.
     fn index(&self, x: u16, y: u16) -> usize {
         ((y * self.width) + x) as usize
@@ -138,6 +149,18 @@ impl Buffer {
         }
 
         changes
+    }
+
+    /// Copies a rectangular area from another buffer into this one.
+    ///
+    /// This is useful for scrolling or compositing multiple buffers.
+    pub fn copy_from(&mut self, source: &Buffer, src_area: Rect, dest_x: u16, dest_y: u16) {
+        for x in 0..src_area.width {
+            for y in 0..src_area.height {
+                let cell = source.get(src_area.x + x, src_area.y + y);
+                self.set_cell(dest_x + x, dest_y + y, *cell);
+            }
+        }
     }
 }
 

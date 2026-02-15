@@ -3,9 +3,11 @@
 use crate::{Frame, Rect};
 
 pub mod block;
+pub mod scrollable;
 pub mod text;
 
 pub use block::{Block, BorderType, Borders};
+pub use scrollable::Scrollable;
 pub use text::Text;
 
 /// The core trait for all UI components.

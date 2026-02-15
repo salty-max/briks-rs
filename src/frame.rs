@@ -37,6 +37,14 @@ impl<'a> Frame<'a> {
         self.area
     }
 
+    /// Returns a mutable reference to the underlying buffer.
+    ///
+    /// This is an advanced API used for implementing widgets that need direct
+    /// access to the cell grid (e.g., for scrolling or copying).
+    pub fn buffer_mut(&mut self) -> &mut Buffer {
+        self.buffer
+    }
+
     /// Executes a closure with a sub-frame restricted to the given area.
     ///
     /// All drawing operations performed within the closure will be relative to
@@ -93,6 +101,16 @@ impl<'a> Frame<'a> {
     /// Renders a widget into the given area of the frame.
     pub fn render_widget<W: Widget>(&mut self, widget: W, area: Rect) {
         widget.render(area, self);
+    }
+
+    /// Writes a string to the buffer starting at the given coordinates using a specific style.
+    ///
+    /// This is a convenience method that temporarily sets the style, writes the string,
+    /// and then restores the previous style.
+    pub fn write_str_with_style(&mut self, x: u16, y: u16, text: &str, style: Style) {
+        self.with_style(style, |f| {
+            f.write_str(x, y, text);
+        });
     }
 }
 
